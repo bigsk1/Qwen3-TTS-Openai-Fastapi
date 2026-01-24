@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # GPU-enabled service (default)
+  qwen3-tts-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: qwen3-tts-api
+    ports:
+      - "8880:8880"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8880
+      - WORKERS=1
+      - CORS_ORIGINS=*
+    volumes:
+      # Mount model cache for persistence
+      - ~/.cache/huggingface:/home/appuser/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # CPU-only service
+  qwen3-tts-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cpu-base
+    container_name: qwen3-tts-api-cpu
+    ports:
+      - "8880:8880"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8880
+      - WORKERS=1
+      - CORS_ORIGINS=*
+    volumes:
+      - ~/.cache/huggingface:/home/appuser/.cache/huggingface
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    profiles:
+      - cpu
+
+# To run GPU version: docker-compose up qwen3-tts-gpu
+# To run CPU version: docker-compose --profile cpu up qwen3-tts-cpu
