@@ -1,0 +1,61 @@
+
+======================================================================
+BENCHMARK: vLLM-FlashAttn2
+Server: http://localhost:8880
+Warm runs: 5
+======================================================================
+
+Server health: healthy
+Backend: vllm_omni
+Model: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+
+[2 words] (2 words, 11 chars)
+  Text: Hello world
+  Cold: 0.89s | audio: 0.86s | RTF: 1.04
+    Run 1: 1.84s | RTF: 0.93
+    Run 2: 1.61s | RTF: 0.97
+    Run 3: 1.04s | RTF: 1.02
+    Run 4: 0.82s | RTF: 0.88
+    Run 5: 1.29s | RTF: 1.03
+  Warm median: 1.29s | RTF: 0.97
+  Warm p95: 2.01s | min: 0.82s | max: 1.84s
+
+[short sentence] (7 words, 43 chars)
+  Text: Kia ora koutou, welcome to today's meeting.
+  Cold: 3.14s | audio: 3.60s | RTF: 0.87
+    Run 1: 3.39s | RTF: 0.89
+    Run 2: 4.40s | RTF: 0.94
+    Run 3: 3.25s | RTF: 0.87
+    Run 4: 5.54s | RTF: 0.86
+    Run 5: 3.38s | RTF: 0.90
+  Warm median: 3.39s | RTF: 0.89
+  Warm p95: 6.33s | min: 3.25s | max: 5.54s
+
+[medium paragraph] (20 words, 116 chars)
+  Text: The quick brown fox jumps over the lazy dog near t...
+  Cold: 7.20s | audio: 8.14s | RTF: 0.88
+    Run 1: 6.89s | RTF: 0.90
+    Run 2: 7.59s | RTF: 0.87
+    Run 3: 8.14s | RTF: 0.90
+    Run 4: 7.38s | RTF: 0.87
+    Run 5: 10.01s | RTF: 0.86
+  Warm median: 7.59s | RTF: 0.87
+  Warm p95: 11.32s | min: 6.89s | max: 10.01s
+
+[long paragraph] (36 words, 291 chars)
+  Text: Artificial intelligence has revolutionized the way...
+  Cold: 27.05s | audio: 31.15s | RTF: 0.87
+    Run 1: 20.29s | RTF: 0.87
+    Run 2: 21.50s | RTF: 0.88
+    Run 3: 18.24s | RTF: 0.87
+    Run 4: 27.23s | RTF: 0.88
+    Run 5: 18.77s | RTF: 0.87
+  Warm median: 20.29s | RTF: 0.87
+  Warm p95: 31.24s | min: 18.24s | max: 27.23s
+
+----------------------------------------------------------------------
+SUMMARY
+----------------------------------------------------------------------
+Successful: 4/4 prompts
+Avg warm median: 8.14s
+Avg warm RTF: 0.90

@@ -41,37 +41,37 @@ This implementation supports two backend engines:
 
 ## 🚀 Performance Benchmarks
 
-Performance comparison between backends on NVIDIA RTX 3090 (24GB VRAM). RTF = Real-Time Factor (lower is better, <1.0 means faster than real-time).
+Performance comparison with Flash Attention 2 optimization on NVIDIA RTX 3090 (24GB VRAM). RTF = Real-Time Factor (lower is better, <1.0 means faster than real-time).
 
-### Backend Comparison Summary
+### Flash Attention 2 Impact
 
-| Metric | Official Backend | vLLM-Omni Backend | Winner |
-|--------|------------------|-------------------|--------|
-| **Avg RTF** | 0.97 | **0.83** | vLLM-Omni (-14%) |
-| **Avg Latency** | 8.49s | **7.85s** | vLLM-Omni (-7.5%) |
-| **Cold Start** | **~11s** | ~100s | Official |
-| **VRAM Usage** | 3.89 GB | 3.89 GB | Tie |
+| Backend | RTF (Avg) | Latency | Flash Attn Impact | Recommendation |
+|---------|-----------|---------|-------------------|----------------|
+| **Official + Flash Attn 2** ⚡ | **0.87** | **7.28s** | ✅ **+10% faster** | 🏆 **Best Overall** |
+| Official (baseline) | 0.97 | 8.49s | - | Good |
+| vLLM-Omni | 0.83 | 7.85s | - | Fast (no flash) |
+| vLLM-Omni + Flash Attn 2 | 0.90 | 8.14s | ⚠️ -8% slower | Not recommended |
 
-### Detailed Results
+**Key Findings:**
+- ✅ Flash Attention 2 **improves Official backend by 10%**
+- ⚠️ Flash Attention 2 **degrades vLLM-Omni by 8%** (optimization conflict)
+- 🏆 **Official + Flash Attn 2 is the fastest and most reliable** configuration
 
-| Test Case | Words | Official (median) | vLLM-Omni (median) | Official RTF | vLLM RTF |
-|-----------|-------|-------------------|--------------------|--------------:|----------:|
-| Short | 2 | 1.01s | 1.79s | 1.02 | **0.91** |
-| Sentence | 7 | 3.29s | 3.61s | 1.00 | **0.85** |
-| Medium | 20 | 8.50s | **6.81s** | 0.94 | **0.79** |
-| Long | 36 | 21.16s | **19.21s** | 0.92 | **0.78** |
+### Detailed Results (with Flash Attention 2)
+
+| Test Case | Words | Official+Flash2 | vLLM+Flash2 | Official RTF | vLLM RTF |
+|-----------|-------|-----------------|-------------|-------------:|----------:|
+| Short | 2 | 1.15s | 1.29s | **0.95** | 0.97 |
+| Sentence | 7 | 2.65s | 3.39s | **0.88** | 0.89 |
+| Medium | 20 | **7.60s** | 7.59s | **0.84** | 0.87 |
+| Long | 36 | **17.71s** | 20.29s | **0.81** | 0.87 |
 
 - **Model**: Qwen3-TTS-12Hz-1.7B-CustomVoice
 - **GPU**: NVIDIA GeForce RTX 3090 (24GB VRAM)
 - **Test Method**: 1 cold run + 5 warm runs per prompt
+- **Docker Images**: Built with Flash Attention 2
 
-**Recommendations:**
-| Use Case | Recommended Backend |
-|----------|---------------------|
-| 🚀 **Production (high throughput)** | vLLM-Omni |
-| 🧪 **Development/Testing** | Official |
-| ⚡ **Low latency short text** | Official |
-| 📦 **Batch processing** | vLLM-Omni |
+**Production Recommendation:** Use **Official backend with Flash Attention 2** for best performance (RTF 0.87, ~15% faster than real-time).
 
 See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for full details.
 

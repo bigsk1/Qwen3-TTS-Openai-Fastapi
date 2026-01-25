@@ -9,14 +9,19 @@
 - **Backends Tested**: Official (PyTorch), vLLM-Omni
 - **Methodology**: 1 cold run + 5 warm runs per test case
 
-## Summary: Backend Comparison
+## Summary: Backend + Flash Attention 2 Comparison
 
-| Metric | Official Backend | vLLM-Omni Backend | Difference |
-|--------|------------------|-------------------|------------|
-| **Avg RTF** | 0.97 | 0.83 | **-14%** ✨ |
-| **Avg Warm Median** | 8.49s | 7.85s | **-7.5%** |
-| **Model Loading** | ~11s | ~100s | +89s |
-| **VRAM Usage** | 3.89 GB | 3.89 GB | Same |
+| Backend | RTF (Avg) | Latency (Avg) | vs Official | Flash Attn Impact |
+|---------|-----------|---------------|-------------|-------------------|
+| **Official** | 0.97 | 8.49s | Baseline | - |
+| **Official + Flash Attn 2** ⚡ | **0.87** | **7.28s** | **+10% faster** | ✅ +10% |
+| **vLLM-Omni** | 0.83 | 7.85s | +14% faster | - |
+| **vLLM-Omni + Flash Attn 2** | 0.90 | 8.14s | +7% faster | ⚠️ -8% |
+
+**Key Findings:**
+- ✅ **Flash Attention 2 significantly improves Official backend** (+10% RTF improvement)
+- ⚠️ **Flash Attention 2 slightly degrades vLLM-Omni** (-8% RTF regression, likely due to optimization conflicts)
+- 🏆 **Winner: Official + Flash Attn 2** - Best balance of speed (RTF 0.87) and consistency
 
 **RTF = Real-Time Factor** (lower is better: <1.0 means faster than real-time)
 

@@ -38,9 +38,27 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # =============================================================================
-# Stage 2: Build dependencies
+# Stage 2: Builder with CUDA development tools for flash-attn
 # =============================================================================
-FROM base AS builder
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
+
+# Install Python and build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3.11-dev \
+    build-essential \
+    git \
+    curl \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3 /usr/bin/python
+
+# Set up Python virtual environment
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 WORKDIR /build
 
@@ -75,8 +93,11 @@ RUN pip install --no-cache-dir \
     inflect \
     aiofiles
 
-# Optional: Install flash-attention for better performance (may fail on some systems)
-RUN pip install --no-cache-dir flash-attn --no-build-isolation || true
+# Install ninja for faster flash-attn compilation
+RUN pip install --no-cache-dir ninja packaging wheel
+
+# Install flash-attention 2 for optimized attention (requires CUDA)
+RUN pip install --no-cache-dir flash-attn --no-build-isolation
 
 # =============================================================================
 # Stage 3: Production image (official backend)
