@@ -57,11 +57,38 @@ class OfficialQwen3TTSBackend(TTSBackend):
             
             logger.info(f"Loading Qwen3-TTS model '{self.model_name}' on {self.device}...")
             
+            # Load model with Flash Attention 2 and optimizations
             self.model = Qwen3TTSModel.from_pretrained(
                 self.model_name,
                 device_map=self.device,
                 dtype=self.dtype,
+                attn_implementation="flash_attention_2",  # Use Flash Attention 2
             )
+            
+            # Apply torch.compile() optimization for faster inference
+            if torch.cuda.is_available() and hasattr(torch, 'compile'):
+                logger.info("Applying torch.compile() optimization...")
+                try:
+                    # Compile the model with reduce-overhead mode for faster inference
+                    self.model.model = torch.compile(
+                        self.model.model,
+                        mode="reduce-overhead",  # Optimize for inference speed
+                        fullgraph=False,  # Allow graph breaks for compatibility
+                    )
+                    logger.info("torch.compile() optimization applied successfully")
+                except Exception as e:
+                    logger.warning(f"Could not apply torch.compile(): {e}")
+            
+            # Enable cuDNN benchmarking for optimal convolution algorithms
+            if torch.cuda.is_available():
+                torch.backends.cudnn.benchmark = True
+                logger.info("Enabled cuDNN benchmark mode")
+            
+            # Enable TF32 for faster matmul on Ampere+ GPUs (RTX 30xx/40xx)
+            if torch.cuda.is_available():
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                logger.info("Enabled TF32 precision for faster matmul")
             
             self._ready = True
             logger.info(f"Official Qwen3-TTS backend loaded successfully on {self.device}")

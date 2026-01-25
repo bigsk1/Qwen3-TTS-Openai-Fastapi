@@ -75,6 +75,24 @@ Performance comparison with Flash Attention 2 optimization on NVIDIA RTX 3090 (2
 
 See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for full details.
 
+## ⚡ Performance Optimizations
+
+The official backend includes several production-ready optimizations for maximum inference speed:
+
+| Optimization | Impact | Hardware Requirement | Status |
+|-------------|--------|---------------------|--------|
+| **Flash Attention 2** | +10% faster | Ampere+ GPU (RTX 30xx/40xx) | ✅ Enabled |
+| **torch.compile()** | +20-30% faster | Any CUDA GPU | ✅ Enabled |
+| **TF32 Precision** | +3-5x matmul speed | Ampere+ GPU | ✅ Enabled |
+| **cuDNN Benchmark** | +5-10% faster | Any CUDA GPU | ✅ Enabled |
+| **BFloat16** | -50% VRAM | Turing+ GPU (RTX 20xx+) | ✅ Enabled |
+
+**Combined Effect:** ~25-35% speedup over baseline (expected RTF: 0.65-0.70)
+
+⚠️ **Note**: torch.compile() and cuDNN benchmarking require warmup. First 2-3 requests may be slower (~10-30s) while optimizations initialize.
+
+📖 **See [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md)** for detailed information about each optimization, how to enable/disable them, and troubleshooting tips.
+
 ## 🚀 Quick Start (API Server)
 
 ### Using OpenAI Python Client

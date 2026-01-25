@@ -1,0 +1,19 @@
+
+********
+Warning: flash-attn is not installed. Will only run the manual PyTorch version. Please install flash-attn for faster inference.
+********
+ 
+Traceback (most recent call last):
+  File "/home/op/Qwen3-TTS-Openai-Fastapi/test_optimizations.py", line 16, in <module>
+    from qwen_tts import Qwen3TTSModel
+  File "/home/op/Qwen3-TTS-Openai-Fastapi/qwen_tts/__init__.py", line 21, in <module>
+    from .inference.qwen3_tts_model import Qwen3TTSModel, VoiceClonePromptItem
+  File "/home/op/Qwen3-TTS-Openai-Fastapi/qwen_tts/inference/qwen3_tts_model.py", line 29, in <module>
+    from ..core.models import Qwen3TTSConfig, Qwen3TTSForConditionalGeneration, Qwen3TTSProcessor
+  File "/home/op/Qwen3-TTS-Openai-Fastapi/qwen_tts/core/__init__.py", line 19, in <module>
+    from .tokenizer_12hz.modeling_qwen3_tts_tokenizer_v2 import Qwen3TTSTokenizerV2Model
+  File "/home/op/Qwen3-TTS-Openai-Fastapi/qwen_tts/core/tokenizer_12hz/modeling_qwen3_tts_tokenizer_v2.py", line 475, in <module>
+    class Qwen3TTSTokenizerV2DecoderTransformerModel(Qwen3TTSTokenizerV2DecoderPreTrainedModel):
+  File "/home/op/Qwen3-TTS-Openai-Fastapi/qwen_tts/core/tokenizer_12hz/modeling_qwen3_tts_tokenizer_v2.py", line 498, in Qwen3TTSTokenizerV2DecoderTransformerModel
+    @check_model_inputs()
+TypeError: check_model_inputs() missing 1 required positional argument: 'func'
