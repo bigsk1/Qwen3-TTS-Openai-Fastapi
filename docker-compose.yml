@@ -17,8 +17,9 @@ services:
       - CORS_ORIGINS=*
       - TTS_BACKEND=official
       - TTS_WARMUP_ON_START=false
-      - CUDA_VISIBLE_DEVICES=2
-      - LD_LIBRARY_PATH=/usr/local/cuda-12.1/targets/x86_64-linux/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+      # When using device_ids filter, the GPU appears as device 0 inside container
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       # Mount model cache for persistence
       - ~/.cache/huggingface:/home/appuser/.cache/huggingface
@@ -41,8 +42,7 @@ services:
   qwen3-tts-vllm:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: vllm-production
+      dockerfile: Dockerfile.vllm
     container_name: qwen3-tts-api-vllm
     ports:
       - "8880:8880"
@@ -53,17 +53,20 @@ services:
       - CORS_ORIGINS=*
       - TTS_BACKEND=vllm_omni
       - TTS_WARMUP_ON_START=true
-      # Use smaller 0.6B model for faster inference
-      - TTS_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+      - TTS_MODEL_NAME=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - HF_HOME=/root/.cache/huggingface
     volumes:
       # Mount model cache for persistence
-      - ~/.cache/huggingface:/home/appuser/.cache/huggingface
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    ipc: host
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              device_ids: ['2']
               capabilities: [gpu]
     restart: unless-stopped
     healthcheck:

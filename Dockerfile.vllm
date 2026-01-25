@@ -1,0 +1,56 @@
+# vLLM-Omni Dockerfile for Qwen3-TTS
+# Uses official vLLM-Omni image (requires Python 3.12)
+# See: https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/
+
+FROM vllm/vllm-omni:v0.14.0rc1
+
+WORKDIR /app
+
+# Fix stale GPG keys and install runtime deps for audio + optional mp3 conversion
+RUN rm -rf /var/lib/apt/lists/* && \
+    apt-get clean && \
+    apt-get update --allow-releaseinfo-change -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true 2>/dev/null || true && \
+    apt-get install -y --allow-unauthenticated --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy application code
+COPY . /app
+
+# Install API dependencies
+RUN pip install --no-cache-dir -U pip && \
+    pip install --no-cache-dir \
+    fastapi>=0.109.0 \
+    uvicorn[standard]>=0.27.0 \
+    python-multipart \
+    pydantic>=2.0.0 \
+    inflect \
+    aiofiles \
+    soundfile \
+    numpy \
+    scipy \
+    pydub \
+    librosa
+
+# Install the package
+RUN pip install --no-cache-dir -e .
+
+# Environment configuration
+ENV HOST=0.0.0.0
+ENV PORT=8880
+ENV WORKERS=1
+ENV TTS_BACKEND=vllm_omni
+ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
+ENV PYTHONUNBUFFERED=1
+
+# Expose port
+EXPOSE 8880
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
+    CMD curl -f http://localhost:8880/health || exit 1
+
+# Run the server
+CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8880"]

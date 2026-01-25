@@ -52,13 +52,15 @@ def get_backend() -> TTSBackend:
         
         logger.info(f"Using official Qwen3-TTS backend with model: {_backend_instance.get_model_id()}")
     
-    elif backend_type == "vllm_omni" or backend_type == "vllm-omni":
+    elif backend_type == "vllm_omni" or backend_type == "vllm-omni" or backend_type == "vllm":
         # vLLM-Omni backend
         if model_name:
             _backend_instance = VLLMOmniQwen3TTSBackend(model_name=model_name)
         else:
-            # Use default 0.6B model for speed
-            _backend_instance = VLLMOmniQwen3TTSBackend()
+            # Use 1.7B model for best quality/speed tradeoff
+            _backend_instance = VLLMOmniQwen3TTSBackend(
+                model_name="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+            )
         
         logger.info(f"Using vLLM-Omni backend with model: {_backend_instance.get_model_id()}")
     

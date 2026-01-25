@@ -1,71 +1,80 @@
-# vLLM Backend Status Report
+# vLLM-Omni Backend for Qwen3-TTS
 
 ## Summary
 
-As of January 25, 2026, the vLLM backend implementation in this repository is **NOT FUNCTIONAL**. The code references a `vllm.Omni` class that does not exist in the current vLLM library (v0.14.1).
+The vLLM-Omni backend provides optimized inference for Qwen3-TTS using the [vLLM-Omni](https://docs.vllm.ai/projects/vllm-omni/) framework.
 
-## Investigation Findings
+## Requirements
 
-### vLLM API Issue
+- **Python 3.12** (required by vLLM-Omni)
+- **CUDA GPU** with compute capability
+- **vLLM-Omni** package (`vllm_omni`)
 
-The vLLM backend code (`api/backends/vllm_omni_qwen3_tts.py`) attempts to import:
-```python
-from vllm import Omni
+## Quick Start
+
+### Using Docker (Recommended)
+
+```bash
+# Build and run vLLM-Omni backend
+docker compose --profile vllm up -d --build qwen3-tts-vllm
+
+# Check health
+curl -s http://localhost:8880/health | jq .
+
+# Run benchmark
+python3 bench_tts.py --label "vLLM-Omni" | tee bench_vllm.txt
 ```
 
-However, vLLM 0.14.1 does not expose an `Omni` class. Available classes in vLLM include:
-- `LLM` - Main inference class
-- `MultiModalRegistry` - For multi-modal support
-- Various other utilities
+### Manual Installation
 
-The vLLM library does have multi-modal capabilities, but they don't include a ready-to-use audio generation interface called `Omni`.
+```bash
+# Requires Python 3.12
+pip install vllm-omni soundfile numpy
+```
 
-### Status of vLLM-Omni
+## API Usage
 
-The term "vLLM-Omni" appears to refer to:
-1. A future feature planned for vLLM
-2. A separate fork or extension not yet in the main vLLM repository
-3. A placeholder implementation awaiting proper vLLM audio support
+The vLLM-Omni backend uses the correct import structure:
 
-As of this date, standard vLLM does not have native TTS/audio generation capabilities that can be directly used for Qwen3-TTS.
+```python
+from vllm import SamplingParams
+from vllm_omni import Omni  # Note: vllm_omni, not vllm!
 
-## Recommendations
+omni = Omni(model="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
 
-### Short-term
+inputs = {
+    "prompt": "<|im_start|>assistant\nHello world<|im_end|>\n<|im_start|>assistant\n",
+    "additional_information": {
+        "task_type": ["CustomVoice"],
+        "text": ["Hello world"],
+        "instruct": [""],
+        "language": ["English"],
+        "speaker": ["Vivian"],
+        "max_new_tokens": [2048],
+    },
+}
 
-1. **Use Official Backend**: The official backend (`TTS_BACKEND=official`) works correctly and provides excellent performance
-2. **Remove vLLM Claims**: Update documentation to remove claims about vLLM backend functionality until it's properly implemented
-3. **Mark as Experimental**: Clearly label the vLLM backend as "planned" or "experimental" rather than functional
+for stage_outputs in omni.generate(inputs, sampling_params_list):
+    for output in stage_outputs.request_output:
+        audio = output.multimodal_output["audio"]
+        sr = output.multimodal_output["sr"]
+```
 
-### Long-term
+## Supported Models
 
-To implement a working vLLM backend, one of these approaches is needed:
+| Model | Size | Speed | Quality |
+|-------|------|-------|---------|
+| `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` | 1.7B | ⚡⚡ | ⭐⭐⭐⭐ (Recommended) |
+| `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` | 1.7B | ⚡⚡ | ⭐⭐⭐⭐ |
+| `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | 1.7B | ⚡⚡ | ⭐⭐⭐⭐ |
+| `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | 0.6B | ⚡⚡⚡ | ⭐⭐⭐ |
 
-1. **Wait for vLLM-Omni**: Monitor vLLM development for native TTS support
-2. **Custom Implementation**: Build a custom adapter that uses vLLM's multi-modal capabilities to integrate Qwen3-TTS
-3. **Alternative Optimization**: Use other optimization techniques like:
-   - ONNX Runtime
-   - TensorRT
-   - Optimum
-   - BetterTransformer / FlashAttention (already supported)
+## References
 
-## Docker/GPU Issues
-
-Additionally, during testing we encountered GPU passthrough issues with the current Docker configuration. The container can access `nvidia-smi` but PyTorch reports "No CUDA GPUs are available". This appears to be a container build/configuration issue unrelated to the vLLM backend problem.
-
-### Working Configuration
-
-For GPU inference, users should ensure:
-- Proper NVIDIA Container Toolkit installation
-- Correct docker-compose GPU device configuration
-- Matching CUDA versions between container and host driver
-
-## Conclusion
-
-The vLLM backend should be considered **non-functional** and **not ready for use**. The official backend remains the recommended option for all deployment scenarios.
+- [vLLM-Omni Qwen3-TTS Example](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/offline_inference/qwen3_tts/)
+- [vLLM-Omni Installation](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/installation/gpu/)
+- [vLLM-Omni Quickstart](https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/quickstart/)
 
 ---
 
-*Report generated: January 25, 2026*
-*vLLM version tested: 0.14.1*
-*PyTorch version: 2.5.1+cu121*
+*Updated: January 25, 2026*

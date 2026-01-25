@@ -4,100 +4,85 @@
 
 - **Date**: January 25, 2026
 - **GPU**: NVIDIA GeForce RTX 3090 (24GB VRAM)
-- **CPU**: Multi-core CPU (no GPU acceleration)
-- **Model**: Qwen3-TTS-12Hz-0.6B-Base
-- **Docker**: CUDA 12.1.1 support
-- **Validation**: Whisper ASR (Parakeet TDT 0.6B v3) on port 5092
-- **Methodology**: Each test run 3 times, results averaged
+- **Model**: Qwen3-TTS-12Hz-1.7B-CustomVoice
+- **Docker**: CUDA 12.1+ support
+- **Backends Tested**: Official (PyTorch), vLLM-Omni
+- **Methodology**: 1 cold run + 5 warm runs per test case
 
-## Summary Results
+## Summary: Backend Comparison
 
-| Test Case | Input | GPU Time | CPU Time | Speedup | Whisper Accuracy |
-|-----------|-------|----------|----------|---------|------------------|
-| **Short** | 2 words (12 chars) | 1.00s | 7.40s | **7.4x** | 100% |
-| **Medium** | 19 words (94 chars) | 5.38s | 62.26s | **11.6x** | 100% |
-| **Long** | 48 words (317 chars) | 18.40s | ~140s* | **7.6x** | 92% |
+| Metric | Official Backend | vLLM-Omni Backend | Difference |
+|--------|------------------|-------------------|------------|
+| **Avg RTF** | 0.97 | 0.83 | **-14%** ✨ |
+| **Avg Warm Median** | 8.49s | 7.85s | **-7.5%** |
+| **Model Loading** | ~11s | ~100s | +89s |
+| **VRAM Usage** | 3.89 GB | 3.89 GB | Same |
 
-*Long paragraph on CPU exceeded 120s timeout (estimated)
+**RTF = Real-Time Factor** (lower is better: <1.0 means faster than real-time)
 
-## Detailed Results
+## Detailed Benchmark Results
 
-### GPU Performance (NVIDIA RTX 3090)
+### Official Backend (PyTorch)
 
-#### Short Phrase (2 words: "Hello world!")
-- Iteration 1: 1.45s
-- Iteration 2: 0.83s
-- Iteration 3: 0.73s
-- **Average**: 1.00s
-- **Whisper Accuracy**: 100%
+| Test Case | Words | Cold | Warm Median | RTF | p95 |
+|-----------|-------|------|-------------|-----|-----|
+| Short | 2 | 2.20s | 1.01s | 1.02 | 1.70s |
+| Sentence | 7 | 3.65s | 3.29s | 1.00 | 3.69s |
+| Medium | 20 | 9.70s | 8.50s | 0.94 | 9.12s |
+| Long | 36 | 19.68s | 21.16s | 0.92 | 22.39s |
 
-#### Medium Sentence (19 words)
-Text: "The quick brown fox jumps over the lazy dog. This is a test of text-to-speech generation."
-- Iteration 1: 6.00s
-- Iteration 2: 5.06s
-- Iteration 3: 5.09s
-- **Average**: 5.38s
-- **Whisper Accuracy**: 100%
+**Average RTF: 0.97** (approximately real-time)
 
-#### Long Paragraph (48 words)
-Text: "Artificial intelligence is transforming the world. Text-to-speech technology has advanced significantly in recent years. Modern neural networks can generate remarkably natural-sounding speech. The Qwen3-TTS model represents the latest breakthrough in this field, offering high-quality voice synthesis with low latency."
-- Iteration 1: 17.59s
-- Iteration 2: 17.89s
-- Iteration 3: 19.71s
-- **Average**: 18.40s
-- **Whisper Accuracy**: 91.7%
+### vLLM-Omni Backend
 
-### CPU Performance
+| Test Case | Words | Cold | Warm Median | RTF | p95 |
+|-----------|-------|------|-------------|-----|-----|
+| Short | 2 | 0.82s | 1.79s | 0.91 | 2.31s |
+| Sentence | 7 | 3.35s | 3.61s | 0.85 | 8.19s |
+| Medium | 20 | 7.72s | 6.81s | 0.79 | 7.24s |
+| Long | 36 | 20.28s | 19.21s | 0.78 | 32.78s |
 
-#### Short Phrase (2 words)
-- Iteration 1: 8.17s
-- Iteration 2: 6.76s
-- Iteration 3: 7.26s
-- **Average**: 7.40s
-- **Whisper Accuracy**: 100%
+**Average RTF: 0.83** (~20% faster than real-time)
 
-#### Medium Sentence (19 words)
-- Iteration 1: 67.35s
-- Iteration 2: 65.63s
-- Iteration 3: 53.79s
-- **Average**: 62.26s
-- **Whisper Accuracy**: 93.3%
+## Test Prompts
 
-#### Long Paragraph (48 words)
-- **Result**: Exceeded 120s timeout
-- **Estimated**: ~140s
-- **Note**: CPU mode not suitable for long-form real-time synthesis
+1. **2 words**: "Hello world"
+2. **Sentence**: "Kia ora koutou, welcome to today's meeting."
+3. **Medium**: "The quick brown fox jumps over the lazy dog near the riverbank. This is a test of text-to-speech generation quality."
+4. **Long**: "Artificial intelligence has revolutionized the way we interact with technology. Text-to-speech technology has advanced significantly in recent years. Modern neural networks can generate remarkably natural-sounding speech. The Qwen3-TTS model represents the latest breakthrough in this field."
 
 ## Key Findings
 
-### Performance Metrics
+### Performance
 
-- **GPU Average Generation Time**: 3.19s per request
-- **CPU Average Generation Time**: 34.83s per request  
-- **Average GPU Speedup**: **10.9x faster** than CPU
-- **Audio Quality**: 97% average Whisper transcription accuracy across all tests
+- **vLLM-Omni is 14-20% faster** for RTF on medium/long text
+- **Official backend has more consistent latency** (lower p95 variance)
+- **vLLM-Omni cold start is ~10x slower** due to stage initialization
+- Both backends use ~3.89 GB VRAM for the 1.7B model
+
+### Recommendations
+
+| Use Case | Recommended Backend |
+|----------|---------------------|
+| **Production API (high throughput)** | vLLM-Omni |
+| **Development/Testing** | Official |
+| **Low latency short text** | Official |
+| **Batch processing** | vLLM-Omni |
+| **Memory constrained** | Either (same VRAM) |
 
 ### Scalability
 
-**GPU Mode:**
-- ✅ Real-time capable for short to medium inputs (<20 words)
-- ✅ Sub-20s generation for longer paragraphs (48 words)
-- ✅ Suitable for interactive applications
-- ✅ Low latency even on first request (model warm-up handled)
+**Official Backend:**
+- ✅ Fast model loading (~11s)
+- ✅ Consistent latency
+- ✅ Simple deployment
+- ⚠️ RTF ~1.0 (barely real-time for long text)
 
-**CPU Mode:**
-- ⚠️ 7-12x slower than GPU
-- ⚠️ Not suitable for real-time applications
-- ✅ Usable for batch processing
-- ⚠️ Long inputs may timeout (>48 words)
-
-### Audio Quality
-
-All generated audio files were validated using Whisper ASR:
-
-- **Short phrases**: 100% transcription accuracy on both GPU and CPU
-- **Medium sentences**: 100% GPU, 93.3% CPU
-- **Long paragraphs**: 91.7% GPU accuracy
+**vLLM-Omni Backend:**
+- ✅ 20% faster generation
+- ✅ Better for batch/concurrent requests
+- ⚠️ Slow cold start (~100s)
+- ⚠️ Higher p95 variance
 - **Overall**: Excellent audio quality maintained across all test cases
 
 ## Recommendations

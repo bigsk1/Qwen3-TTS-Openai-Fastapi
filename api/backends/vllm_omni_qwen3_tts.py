@@ -4,9 +4,13 @@
 vLLM-Omni Qwen3-TTS backend implementation.
 
 This backend uses vLLM-Omni for faster inference with Qwen3-TTS models.
-Note: vLLM-Omni currently only supports offline inference.
+Uses the official vLLM-Omni API with correct imports from `vllm_omni`.
+
+See: https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/offline_inference/qwen3_tts/
 """
 
+import os
+import io
 import logging
 import asyncio
 from typing import Optional, Tuple, List, Dict, Any
@@ -15,6 +19,9 @@ import numpy as np
 from .base import TTSBackend
 
 logger = logging.getLogger(__name__)
+
+# Set multiprocessing method for vLLM-Omni (must be done before import)
+os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
 
 # Optional librosa import for speed adjustment
 try:
@@ -25,26 +32,52 @@ except ImportError:
 
 
 class VLLMOmniQwen3TTSBackend(TTSBackend):
-    """vLLM-Omni backend for Qwen3-TTS."""
+    """
+    vLLM-Omni backend for Qwen3-TTS.
+    
+    Uses the same input structure as the official vLLM-Omni example:
+    - inputs["prompt"]
+    - inputs["additional_information"] with list-wrapped fields
+    - output.multimodal_output["audio"] and ["sr"]
+    """
     
     def __init__(
         self, 
-        model_name: str = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
-        max_model_len: int = 2048,
+        model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        stage_configs_path: Optional[str] = None,
+        enable_stats: bool = False,
+        stage_init_timeout_s: int = 300,
+        seed: int = 42,
+        max_tokens: int = 2048,
     ):
         """
         Initialize the vLLM-Omni backend.
         
         Args:
-            model_name: HuggingFace model identifier (recommend 0.6B for speed)
-            max_model_len: Maximum model length for vLLM
+            model_name: HuggingFace model identifier
+                Options:
+                - Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice (recommended)
+                - Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+                - Qwen/Qwen3-TTS-12Hz-1.7B-Base
+                - Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+            stage_configs_path: Optional path to stage configs
+            enable_stats: Whether to log statistics
+            stage_init_timeout_s: Timeout for stage initialization
+            seed: Random seed for reproducibility
+            max_tokens: Maximum tokens for generation
         """
         super().__init__()
         self.model_name = model_name
-        self.max_model_len = max_model_len
+        self.stage_configs_path = stage_configs_path
+        self.enable_stats = enable_stats
+        self.stage_init_timeout_s = stage_init_timeout_s
+        self.seed = seed
+        self.max_tokens = max_tokens
+        
         self._ready = False
-        self._lock = asyncio.Lock()  # For thread safety
-        self.llm = None
+        self._lock = asyncio.Lock()
+        self.omni = None
+        self.sampling_params_list = None
     
     async def initialize(self) -> None:
         """Initialize the backend and load the model."""
@@ -57,33 +90,41 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
                 return
             
             try:
-                import torch
-                from vllm import Omni
+                # Import vLLM-Omni (note: from vllm_omni, not vllm)
+                from vllm import SamplingParams
+                from vllm_omni import Omni
                 
-                # Determine device
-                if torch.cuda.is_available():
-                    self.device = "cuda:0"
-                    self.dtype = torch.bfloat16
-                else:
-                    self.device = "cpu"
-                    self.dtype = torch.float32
-                
-                logger.info(f"Loading vLLM-Omni model '{self.model_name}' on {self.device}...")
+                logger.info(f"Loading vLLM-Omni model '{self.model_name}'...")
                 
                 # Initialize vLLM-Omni
-                self.llm = Omni(
+                self.omni = Omni(
                     model=self.model_name,
-                    max_model_len=self.max_model_len,
-                    dtype="bfloat16" if self.dtype == torch.bfloat16 else "float32",
+                    stage_configs_path=self.stage_configs_path,
+                    log_stats=self.enable_stats,
+                    stage_init_timeout=self.stage_init_timeout_s,
                 )
                 
+                # Pre-create sampling params for reuse
+                self.sampling_params_list = [
+                    SamplingParams(
+                        temperature=0.9,
+                        top_p=1.0,
+                        top_k=50,
+                        max_tokens=self.max_tokens,
+                        seed=self.seed,
+                        detokenize=False,
+                        repetition_penalty=1.05,
+                    )
+                ]
+                
                 self._ready = True
-                logger.info(f"vLLM-Omni backend loaded successfully on {self.device}")
+                logger.info(f"vLLM-Omni backend loaded successfully!")
                 
             except ImportError as e:
                 logger.error(f"vLLM-Omni not installed: {e}")
                 raise RuntimeError(
-                    "vLLM-Omni is not installed. Please install with: pip install vllm"
+                    "vLLM-Omni is not installed. Please use Dockerfile.vllm or install: "
+                    "pip install vllm-omni (requires Python 3.12 and CUDA)"
                 )
             except Exception as e:
                 logger.error(f"Failed to load vLLM-Omni backend: {e}")
@@ -102,8 +143,8 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
         
         Args:
             text: The text to synthesize
-            voice: Voice name to use (speaker id)
-            language: Language code
+            voice: Voice/speaker name (e.g., "Vivian", "Ryan")
+            language: Language code (e.g., "English", "Chinese", "Auto")
             instruct: Optional instruction for voice style
             speed: Speech speed multiplier
         
@@ -113,117 +154,118 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
         if not self._ready:
             await self.initialize()
         
-        # Use lock to ensure thread safety for vLLM-Omni
-        async with self._lock:
-            try:
-                from vllm import SamplingParams
-                
-                # Prepare the prompt for CustomVoice task
-                # Format based on vLLM-Omni's offline example
-                prompt = self._build_prompt(text, voice, language, instruct)
-                
-                # Set up sampling parameters
-                sampling_params = SamplingParams(
-                    temperature=0.7,
-                    max_tokens=self.max_model_len,
-                )
-                
-                # Generate using vLLM-Omni
-                outputs = self.llm.generate(
-                    prompts=[prompt],
-                    sampling_params=sampling_params,
-                )
-                
-                # Extract audio from output
-                # Note: This is a simplified version - actual implementation 
-                # depends on vLLM-Omni's output format
-                if outputs and len(outputs) > 0:
-                    output = outputs[0]
+        try:
+            # Build prompt and inputs following official vLLM-Omni example
+            prompt = f"<|im_start|>assistant\n{text}<|im_end|>\n<|im_start|>assistant\n"
+            
+            # Determine task type based on model
+            if "CustomVoice" in self.model_name:
+                task_type = "CustomVoice"
+            elif "VoiceDesign" in self.model_name:
+                task_type = "VoiceDesign"
+            else:
+                task_type = "Base"
+            
+            inputs = {
+                "prompt": prompt,
+                "additional_information": {
+                    "task_type": [task_type],
+                    "text": [text],
+                    "instruct": [instruct or ""],
+                    "language": [language],
+                    "speaker": [voice],
+                    "max_new_tokens": [self.max_tokens],
+                },
+            }
+            
+            # Generate using vLLM-Omni
+            omni_generator = self.omni.generate(inputs, self.sampling_params_list)
+            
+            # Process outputs
+            for stage_outputs in omni_generator:
+                for output in stage_outputs.request_output:
+                    # Extract audio from multimodal output
+                    audio_tensor = output.multimodal_output["audio"]
+                    sr = int(output.multimodal_output["sr"].item())
                     
-                    # Get audio data from output
-                    # vLLM-Omni should return audio in the output
-                    audio_data = self._extract_audio_from_output(output)
-                    
-                    # Default sample rate for Qwen3-TTS-12Hz models
-                    sample_rate = 12000
+                    # Convert to numpy
+                    audio_np = audio_tensor.float().detach().cpu().numpy()
+                    if audio_np.ndim > 1:
+                        audio_np = audio_np.flatten()
                     
                     # Apply speed adjustment if needed
                     if speed != 1.0 and LIBROSA_AVAILABLE:
-                        audio_data = librosa.effects.time_stretch(
-                            audio_data.astype(np.float32), 
+                        audio_np = librosa.effects.time_stretch(
+                            audio_np.astype(np.float32), 
                             rate=speed
                         )
                     elif speed != 1.0:
                         logger.warning("Speed adjustment requested but librosa not available")
                     
-                    return audio_data, sample_rate
-                else:
-                    raise RuntimeError("No output generated from vLLM-Omni")
-                
-            except Exception as e:
-                logger.error(f"vLLM-Omni speech generation failed: {e}")
-                raise RuntimeError(f"vLLM-Omni speech generation failed: {e}")
+                    return audio_np, sr
+            
+            raise RuntimeError("No audio returned from vLLM-Omni (no stage outputs)")
+            
+        except Exception as e:
+            logger.error(f"vLLM-Omni speech generation failed: {e}")
+            raise RuntimeError(f"vLLM-Omni speech generation failed: {e}")
     
-    def _build_prompt(
-        self, 
-        text: str, 
-        voice: str, 
-        language: str, 
-        instruct: Optional[str]
-    ) -> str:
+    def synthesize_wav_bytes(
+        self,
+        text: str,
+        speaker: str = "Vivian",
+        language: str = "Auto",
+        instruct: str = "",
+        task_type: str = "CustomVoice",
+    ) -> Tuple[bytes, int]:
         """
-        Build the prompt for vLLM-Omni CustomVoice task.
+        Synchronous method to synthesize and return WAV bytes.
+        
+        This provides a direct interface matching the official vLLM-Omni example.
         
         Args:
             text: Text to synthesize
-            voice: Speaker name
-            language: Language
+            speaker: Speaker/voice name
+            language: Language code
             instruct: Optional instruction
+            task_type: Task type (CustomVoice, VoiceDesign, Base)
         
         Returns:
-            Formatted prompt string
+            Tuple of (wav_bytes, sample_rate)
         """
-        # This format should match vLLM-Omni's expected input
-        # Adjust based on actual vLLM-Omni API
-        parts = [f"<|text|>{text}<|/text|>"]
+        import soundfile as sf
         
-        if voice:
-            parts.append(f"<|speaker|>{voice}<|/speaker|>")
+        # Run async method synchronously
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If we're already in an async context, create a new loop
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    self.generate_speech(text, speaker, language, instruct)
+                )
+                audio_np, sr = future.result()
+        else:
+            audio_np, sr = loop.run_until_complete(
+                self.generate_speech(text, speaker, language, instruct)
+            )
         
-        if language and language != "Auto":
-            parts.append(f"<|language|>{language}<|/language|>")
-        
-        if instruct:
-            parts.append(f"<|instruct|>{instruct}<|/instruct|>")
-        
-        return "".join(parts)
+        # Convert to WAV bytes
+        buf = io.BytesIO()
+        sf.write(buf, audio_np, samplerate=sr, format="WAV")
+        return buf.getvalue(), sr
     
-    def _extract_audio_from_output(self, output) -> np.ndarray:
-        """
-        Extract audio data from vLLM-Omni output.
-        
-        Args:
-            output: vLLM-Omni output object
-        
-        Returns:
-            Audio as numpy array
-        """
-        # This is a placeholder - actual implementation depends on 
-        # vLLM-Omni's output format
-        # The output should contain audio data that we can extract
-        
-        if hasattr(output, 'audio'):
-            return np.array(output.audio, dtype=np.float32)
-        elif hasattr(output, 'outputs') and len(output.outputs) > 0:
-            # Try to get audio from outputs
-            output_data = output.outputs[0]
-            if hasattr(output_data, 'audio'):
-                return np.array(output_data.audio, dtype=np.float32)
-        
-        # Fallback: try to convert output text to audio tokens
-        # This would need the tokenizer/decoder
-        logger.warning("Could not extract audio from vLLM-Omni output directly")
-        raise RuntimeError("Failed to extract audio from vLLM-Omni output")
+    def close(self):
+        """Close the backend and release resources."""
+        if self.omni is not None:
+            try:
+                self.omni.close()
+            except Exception as e:
+                logger.warning(f"Error closing vLLM-Omni: {e}")
+            finally:
+                self.omni = None
+                self._ready = False
     
     def get_backend_name(self) -> str:
         """Return the name of this backend."""
@@ -235,14 +277,18 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
     
     def get_supported_voices(self) -> List[str]:
         """Return list of supported voice names."""
-        # vLLM-Omni with Qwen3-TTS supports the same voices as official
-        return ["Vivian", "Ryan", "Sophia", "Isabella", "Evan", "Lily"]
+        # Same voices as official Qwen3-TTS
+        return [
+            "Vivian", "Ryan", "Sophia", "Isabella", "Evan", "Lily",
+            "Serena", "Dylan", "Eric", "Aiden"
+        ]
     
     def get_supported_languages(self) -> List[str]:
         """Return list of supported language names."""
-        # vLLM-Omni with Qwen3-TTS supports the same languages as official
-        return ["English", "Chinese", "Japanese", "Korean", "German", "French", 
-                "Spanish", "Russian", "Portuguese", "Italian"]
+        return [
+            "Auto", "English", "Chinese", "Japanese", "Korean", 
+            "German", "French", "Spanish", "Russian", "Portuguese", "Italian"
+        ]
     
     def is_ready(self) -> bool:
         """Return whether the backend is initialized and ready."""
@@ -251,7 +297,7 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
     def get_device_info(self) -> Dict[str, Any]:
         """Return device information."""
         info = {
-            "device": str(self.device) if self.device else "unknown",
+            "device": "cuda",
             "gpu_available": False,
             "gpu_name": None,
             "vram_total": None,
@@ -263,17 +309,15 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
             
             if torch.cuda.is_available():
                 info["gpu_available"] = True
-                if torch.cuda.current_device() >= 0:
-                    device_idx = torch.cuda.current_device()
-                    info["gpu_name"] = torch.cuda.get_device_name(device_idx)
-                    
-                    # Get VRAM info
-                    props = torch.cuda.get_device_properties(device_idx)
-                    info["vram_total"] = f"{props.total_memory / 1024**3:.2f} GB"
-                    
-                    if self._ready:
-                        allocated = torch.cuda.memory_allocated(device_idx)
-                        info["vram_used"] = f"{allocated / 1024**3:.2f} GB"
+                device_idx = torch.cuda.current_device()
+                info["gpu_name"] = torch.cuda.get_device_name(device_idx)
+                
+                props = torch.cuda.get_device_properties(device_idx)
+                info["vram_total"] = f"{props.total_memory / 1024**3:.2f} GB"
+                
+                if self._ready:
+                    allocated = torch.cuda.memory_allocated(device_idx)
+                    info["vram_used"] = f"{allocated / 1024**3:.2f} GB"
         except Exception as e:
             logger.warning(f"Could not get device info: {e}")
         

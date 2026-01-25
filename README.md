@@ -34,36 +34,46 @@ This implementation supports two backend engines:
 | Backend | Speed | Setup | Best For | Status |
 |---------|-------|-------|----------|--------|
 | **Official** (default) | ⚡⚡ Excellent | ✅ Simple | All use cases, production-ready | ✅ Stable |
-| **vLLM-Omni** | ⚡⚡⚡ Planned | ⚠️ Not Available | Future optimization | ⚠️ Experimental (Non-functional) |
+| **vLLM-Omni** | ⚡⚡⚡ Fast | ⚠️ Python 3.12 + CUDA | High-throughput, low-latency | ✅ Available |
 
-- **Official Backend**: Uses the official Qwen3-TTS Python implementation. **Recommended for all users.**
-- **vLLM-Omni Backend**: ⚠️ **Currently non-functional** - The vLLM library does not yet provide the required `Omni` class for TTS. See [VLLM_BACKEND_STATUS.md](VLLM_BACKEND_STATUS.md) for details.
+- **Official Backend**: Uses the official Qwen3-TTS Python implementation. **Recommended for most users.**
+- **vLLM-Omni Backend**: Uses [vLLM-Omni](https://docs.vllm.ai/projects/vllm-omni/) for optimized inference. Requires Python 3.12 and a dedicated Docker image. See [VLLM_BACKEND_STATUS.md](VLLM_BACKEND_STATUS.md) for details.
 
 ## 🚀 Performance Benchmarks
 
-Performance comparison between GPU (NVIDIA RTX 3090) and CPU inference modes. All tests were validated using Whisper ASR for transcription accuracy.
+Performance comparison between backends on NVIDIA RTX 3090 (24GB VRAM). RTF = Real-Time Factor (lower is better, <1.0 means faster than real-time).
 
-| Test Case | Input | GPU Time (RTX 3090) | CPU Time | Speedup | Whisper Accuracy |
-|-----------|-------|---------------------|----------|---------|------------------|
-| **Short** | 2 words (12 chars) | 1.00s | 7.40s | **7.4x** | 100% |
-| **Medium** | 19 words (94 chars) | 5.38s | 62.26s | **11.6x** | 100% |
-| **Long** | 48 words (317 chars) | 18.40s | ~140s* | **7.6x** | 92% |
+### Backend Comparison Summary
 
-*Long paragraph on CPU exceeded 120s timeout (estimated)
+| Metric | Official Backend | vLLM-Omni Backend | Winner |
+|--------|------------------|-------------------|--------|
+| **Avg RTF** | 0.97 | **0.83** | vLLM-Omni (-14%) |
+| **Avg Latency** | 8.49s | **7.85s** | vLLM-Omni (-7.5%) |
+| **Cold Start** | **~11s** | ~100s | Official |
+| **VRAM Usage** | 3.89 GB | 3.89 GB | Tie |
 
-**Key Performance Metrics:**
+### Detailed Results
 
-- **GPU Average Generation Time**: 3.19s per request
-- **CPU Average Generation Time**: 34.83s per request  
-- **Average GPU Speedup**: **10.9x faster** than CPU
-- **GPU Device**: NVIDIA GeForce RTX 3090 (24GB VRAM)
-- **CPU Mode**: Multi-core CPU (no GPU acceleration)
-- **Model**: Qwen3-TTS-12Hz-0.6B-Base
-- **Audio Quality**: Validated with Whisper ASR - avg 97% transcription accuracy
+| Test Case | Words | Official (median) | vLLM-Omni (median) | Official RTF | vLLM RTF |
+|-----------|-------|-------------------|--------------------|--------------:|----------:|
+| Short | 2 | 1.01s | 1.79s | 1.02 | **0.91** |
+| Sentence | 7 | 3.29s | 3.61s | 1.00 | **0.85** |
+| Medium | 20 | 8.50s | **6.81s** | 0.94 | **0.79** |
+| Long | 36 | 21.16s | **19.21s** | 0.92 | **0.78** |
+
+- **Model**: Qwen3-TTS-12Hz-1.7B-CustomVoice
+- **GPU**: NVIDIA GeForce RTX 3090 (24GB VRAM)
+- **Test Method**: 1 cold run + 5 warm runs per prompt
 
 **Recommendations:**
-- 🎮 **GPU**: Recommended for production/interactive applications with real-time requirements
-- 💻 **CPU**: Suitable for offline batch processing or non-time-sensitive workloads
+| Use Case | Recommended Backend |
+|----------|---------------------|
+| 🚀 **Production (high throughput)** | vLLM-Omni |
+| 🧪 **Development/Testing** | Official |
+| ⚡ **Low latency short text** | Official |
+| 📦 **Batch processing** | vLLM-Omni |
+
+See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for full details.
 
 ## 🚀 Quick Start (API Server)
 
