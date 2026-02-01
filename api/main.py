@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
     
     # Pre-load the TTS backend
     try:
-        from .backends import initialize_backend
+        from .backends import initialize_backend, start_auto_unload, INACTIVITY_TIMEOUT_MINUTES
         logger.info(f"Initializing TTS backend: {TTS_BACKEND}")
         backend = await initialize_backend(warmup=TTS_WARMUP_ON_START)
         logger.info(f"TTS backend '{backend.get_backend_name()}' loaded successfully!")
@@ -77,6 +77,14 @@ async def lifespan(app: FastAPI):
         if device_info.get("gpu_available"):
             logger.info(f"GPU: {device_info.get('gpu_name')}")
             logger.info(f"VRAM: {device_info.get('vram_total')}")
+        
+        # Start auto-unload if configured
+        if INACTIVITY_TIMEOUT_MINUTES > 0:
+            logger.info(f"Auto-unload: Model will unload after {INACTIVITY_TIMEOUT_MINUTES} minutes of inactivity")
+        else:
+            logger.info("Auto-unload: Disabled (set TTS_INACTIVITY_TIMEOUT_MINUTES to enable)")
+        await start_auto_unload()
+        
     except Exception as e:
         logger.warning(f"Backend initialization delayed: {e}")
         logger.info("Backend will be loaded on first request.")
@@ -84,7 +92,10 @@ async def lifespan(app: FastAPI):
     yield
     
     # Cleanup
+    from .backends import stop_auto_unload, unload_backend
     logger.info("Server shutting down...")
+    await stop_auto_unload()
+    await unload_backend()
 
 
 # Initialize FastAPI app
@@ -191,13 +202,24 @@ async def root():
 async def health_check():
     """Health check endpoint with backend information."""
     try:
-        from .backends import get_backend
+        from .backends import get_backend, get_inactivity_seconds, INACTIVITY_TIMEOUT_MINUTES
         
         backend = get_backend()
         device_info = backend.get_device_info()
         
+        # Calculate auto-unload status
+        inactivity = get_inactivity_seconds()
+        auto_unload_info = {
+            "enabled": INACTIVITY_TIMEOUT_MINUTES > 0,
+            "timeout_minutes": INACTIVITY_TIMEOUT_MINUTES,
+        }
+        if INACTIVITY_TIMEOUT_MINUTES > 0 and inactivity > 0:
+            remaining = max(0, (INACTIVITY_TIMEOUT_MINUTES * 60) - inactivity)
+            auto_unload_info["idle_seconds"] = round(inactivity)
+            auto_unload_info["unload_in_seconds"] = round(remaining)
+        
         return {
-            "status": "healthy" if backend.is_ready() else "initializing",
+            "status": "healthy" if backend.is_ready() else "unloaded",
             "backend": {
                 "name": backend.get_backend_name(),
                 "model_id": backend.get_model_id(),
@@ -210,6 +232,7 @@ async def health_check():
                 "vram_total": device_info.get("vram_total"),
                 "vram_used": device_info.get("vram_used"),
             },
+            "auto_unload": auto_unload_info,
             "version": "0.1.0",
         }
     except Exception as e:
@@ -222,6 +245,79 @@ async def health_check():
                 "ready": False,
             },
             "version": "0.1.0",
+        }
+
+
+@app.post("/admin/unload")
+async def admin_unload_model():
+    """
+    Manually unload the TTS model from GPU memory.
+    
+    Use this endpoint to free VRAM when you need GPU memory for other applications.
+    The model will automatically reload on the next TTS request.
+    """
+    try:
+        from .backends import unload_backend, get_backend
+        
+        backend = get_backend()
+        if not backend.is_ready():
+            return {
+                "status": "already_unloaded",
+                "message": "Model is not currently loaded",
+            }
+        
+        success = await unload_backend()
+        
+        if success:
+            return {
+                "status": "success",
+                "message": "Model unloaded from GPU memory. VRAM freed. Will reload on next request.",
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": "Failed to unload model",
+            }
+            
+    except Exception as e:
+        logger.error(f"Admin unload error: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+        }
+
+
+@app.post("/admin/reload")
+async def admin_reload_model():
+    """
+    Manually reload the TTS model into GPU memory.
+    
+    Use this endpoint to pre-load the model after an unload operation.
+    """
+    try:
+        from .backends import get_backend, initialize_backend
+        
+        backend = get_backend()
+        if backend.is_ready():
+            return {
+                "status": "already_loaded",
+                "message": "Model is already loaded",
+                "device_info": backend.get_device_info(),
+            }
+        
+        await initialize_backend()
+        
+        return {
+            "status": "success",
+            "message": "Model loaded into GPU memory",
+            "device_info": backend.get_device_info(),
+        }
+            
+    except Exception as e:
+        logger.error(f"Admin reload error: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
         }
 
 

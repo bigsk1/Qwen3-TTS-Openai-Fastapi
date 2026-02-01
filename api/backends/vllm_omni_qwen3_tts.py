@@ -267,6 +267,43 @@ class VLLMOmniQwen3TTSBackend(TTSBackend):
                 self.omni = None
                 self._ready = False
     
+    async def unload(self) -> None:
+        """
+        Unload the model from GPU memory to free VRAM.
+        
+        This properly cleans up CUDA memory and allows other applications
+        to use the GPU. The model will be reloaded on the next request.
+        """
+        if not self._ready:
+            logger.info("vLLM-Omni backend not loaded, nothing to unload")
+            return
+        
+        logger.info("Unloading vLLM-Omni model from GPU memory...")
+        
+        try:
+            import torch
+            import gc
+            
+            # Close the vLLM-Omni instance
+            self.close()
+            
+            # Force garbage collection
+            gc.collect()
+            
+            # Clear CUDA cache
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                logger.info("CUDA memory cache cleared")
+            
+            logger.info("vLLM-Omni model unloaded successfully - VRAM freed")
+            
+        except Exception as e:
+            logger.error(f"Error during vLLM-Omni unload: {e}")
+            # Still mark as not ready even if cleanup had issues
+            self._ready = False
+            self.omni = None
+    
     def get_backend_name(self) -> str:
         """Return the name of this backend."""
         return "vllm_omni"

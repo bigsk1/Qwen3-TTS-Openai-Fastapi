@@ -125,12 +125,15 @@ def extract_language_from_model(model_name: str) -> Optional[str]:
 
 async def get_tts_backend():
     """Get the TTS backend instance, initializing if needed."""
-    from ..backends import get_backend, initialize_backend
+    from ..backends import get_backend, initialize_backend, update_activity
     
     backend = get_backend()
     
     if not backend.is_ready():
         await initialize_backend()
+    
+    # Track activity for auto-unload feature
+    update_activity()
     
     return backend
 

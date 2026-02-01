@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,7 +19,46 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.idea/
-.vscode/
+
+# Virtual environments
 venv/
 env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment and secrets
+.env
+.env.*
+*.env
+credentials.json
+secrets.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model cache (large files)
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Test outputs
+*.mp3
+*.wav
+*.opus
+*.flac
+!sample-voices-xtts/*.wav
+
+# Logs
+*.log
+logs/
+
+# Backup directories (not needed in repo)
+sample-voices-backup/

@@ -18,6 +18,15 @@ class TTSBackend(ABC):
         self.device = None
         self.dtype = None
     
+    async def unload(self) -> None:
+        """
+        Unload the model from memory to free GPU VRAM.
+        
+        Override in subclasses for proper cleanup.
+        Default implementation just sets model to None.
+        """
+        self.model = None
+    
     @abstractmethod
     async def initialize(self) -> None:
         """

@@ -4,7 +4,8 @@
 # =============================================================================
 # Stage 1: Base image with system dependencies
 # =============================================================================
-ARG BASE_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+# Updated to CUDA 12.8 for Blackwell (RTX 50xx) GPU support
+ARG BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 FROM ${BASE_IMAGE} AS base
 
 # Prevent interactive prompts during package installation
@@ -40,7 +41,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # =============================================================================
 # Stage 2: Builder with CUDA development tools for flash-attn
 # =============================================================================
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
+# Updated to CUDA 12.8 for Blackwell (RTX 50xx) GPU support
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04 AS builder
 
 # Install Python and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -66,11 +68,11 @@ WORKDIR /build
 COPY pyproject.toml ./
 COPY README.md ./
 
-# Install Python dependencies
+# Install Python dependencies (cu128 for CUDA 12.8 / Blackwell RTX 50xx support)
 RUN pip install --no-cache-dir \
     torch>=2.0.0 \
     torchaudio>=2.0.0 \
-    --index-url https://download.pytorch.org/whl/cu121
+    --index-url https://download.pytorch.org/whl/cu128
 
 # Install the main package dependencies
 RUN pip install --no-cache-dir \
@@ -93,11 +95,11 @@ RUN pip install --no-cache-dir \
     inflect \
     aiofiles
 
-# Install ninja for faster flash-attn compilation
-RUN pip install --no-cache-dir ninja packaging wheel
-
-# Install flash-attention 2 for optimized attention (requires CUDA)
-RUN pip install --no-cache-dir flash-attn --no-build-isolation
+# Skip Flash Attention compilation for faster builds
+# PyTorch's native SDPA (Scaled Dot-Product Attention) is used instead
+# SDPA is very fast on modern GPUs (Blackwell, Ada, Ampere) and avoids
+# the resource-intensive flash-attn compilation
+RUN echo "Using PyTorch SDPA instead of Flash Attention for Blackwell compatibility"
 
 # =============================================================================
 # Stage 3: Production image (official backend)
